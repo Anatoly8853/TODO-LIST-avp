@@ -5,15 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"net/http"
+	"strconv"
+	"sync"
 )
 
 type Task struct {
-	ID           string   `json:"id"`          // ID задачи
-	Description  string   `json:"description"` // Заголовок
-	Note         string   `json:"note"`        // Описание задачи
-	Applications []string `json:"application"` // Приложения, которыми будете пользоваться
+	ID           string   `json:"id"`           // ID задачи
+	Description  string   `json:"description"`  // Заголовок
+	Note         string   `json:"note"`         // Описание задачи
+	Applications []string `json:"applications"` // Приложения, которыми будете пользоваться
 }
 
 var tasks = map[string]Task{
@@ -38,6 +39,24 @@ var tasks = map[string]Task{
 			"Postman",
 		},
 	},
+}
+
+// Мьютекс для синхронизации доступа к tasks
+var mu sync.Mutex
+
+// Функция для получения наибольшего значения ID
+func getMaxID() int {
+	maxID := 0
+	for id := range tasks {
+		intID, err := strconv.Atoi(id)
+		if err != nil {
+			continue
+		}
+		if intID > maxID {
+			maxID = intID
+		}
+	}
+	return maxID
 }
 
 func getTasks(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +92,12 @@ func createTask(w http.ResponseWriter, r *http.Request) { // Это принци
 
 	// Генерация нового ID, если его нет
 	if task.ID == "" {
-		task.ID = uuid.New().String()
+		// Генерация нового ID
+		mu.Lock()
+		maxID := getMaxID()
+		newID := maxID + 1
+		task.ID = strconv.Itoa(newID)
+		mu.Unlock()
 	}
 
 	// Добавление User-Agent в Applications, если он отсутствует
