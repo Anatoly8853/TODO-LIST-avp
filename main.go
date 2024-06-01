@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"net/http"
 )
 
@@ -52,10 +53,10 @@ func getTasks(w http.ResponseWriter, r *http.Request) {
 	// так как все успешно, то статус OK
 	w.WriteHeader(http.StatusOK)
 	// записываем сериализованные в JSON данные в тело ответа
-	w.Write(resp)
+	_, _ = w.Write(resp)
 }
 
-func postTasks(w http.ResponseWriter, r *http.Request) {
+func createTask(w http.ResponseWriter, r *http.Request) { // Это принципиально??
 	var task Task
 	var buf bytes.Buffer
 
@@ -70,10 +71,37 @@ func postTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Генерация нового ID, если его нет
+	if task.ID == "" {
+		task.ID = uuid.New().String()
+	}
+
+	// Добавление User-Agent в Applications, если он отсутствует
+	if len(task.Applications) == 0 {
+		userAgent := r.Header.Get("User-Agent")
+		if userAgent != "" {
+			task.Applications = []string{userAgent}
+		}
+	}
+
+	// Проверка на существование задачи с таким ID
+	if _, exists := tasks[task.ID]; exists {
+		http.Error(w, "Задача с таким ID уже существует", http.StatusBadRequest)
+		return
+	}
+
 	tasks[task.ID] = task
 
 	w.Header().Set("Content-Type", "application/json")
+	// Возврат статуса 201 Created
 	w.WriteHeader(http.StatusCreated)
+	// Отправка созданной задачи в ответе
+	resp, err := json.Marshal(task)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write(resp)
 }
 
 func getTask(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +109,7 @@ func getTask(w http.ResponseWriter, r *http.Request) {
 
 	task, ok := tasks[id]
 	if !ok {
-		http.Error(w, "Артист не найден", http.StatusNoContent)
+		http.Error(w, "Задачи не найдены", http.StatusInternalServerError)
 		return
 	}
 
@@ -93,10 +121,10 @@ func getTask(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(resp)
+	_, _ = w.Write(resp)
 }
 
-func getTasksDel(w http.ResponseWriter, r *http.Request) {
+func deleteTask(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	_, ok := tasks[id]
@@ -116,12 +144,12 @@ func main() {
 
 	// регистрируем в роутере эндпоинт `/tasks` с методом GET, для которого используется обработчик `getTasks`
 	r.Get("/tasks", getTasks)
-	// регистрируем в роутере эндпоинт `/tasks` с методом POST, для которого используется обработчик `postTasks`
-	r.Post("/tasks", postTasks)
+	// регистрируем в роутере эндпоинт `/tasks` с методом POST, для которого используется обработчик `createTask`
+	r.Post("/tasks", createTask)
 	// регистрируем в роутере эндпоинт `/task/{id}` с методом GET, для которого используется обработчик `getTask`
 	r.Get("/task/{id}", getTask)
-	// регистрируем в роутере эндпоинт `/tasks/{id}` с методом DELETE, для которого используется обработчик `getTasksDel`
-	r.Delete("/tasks/{id}", getTasksDel)
+	// регистрируем в роутере эндпоинт `/tasks/{id}` с методом DELETE, для которого используется обработчик `deleteTask`
+	r.Delete("/tasks/{id}", deleteTask)
 
 	if err := http.ListenAndServe(":8080", r); err != nil {
 		fmt.Printf("Ошибка при запуске сервера: %s", err.Error())
